@@ -1,0 +1,138 @@
+---
+- name: install dependencies via defaults/main.yml
+  apt:
+    name: "{{ depends }}"
+    update_cache: yes
+
+- name: add nodejs apt key
+  apt_key:
+    url: https://deb.nodesource.com/gpgkey/nodesource.gpg.key
+    state: present
+
+- name: add nodejs 14.x repository
+  apt_repository:
+    repo: "deb https://deb.nodesource.com/node_14.x {{ ansible_distribution_release }} main"
+    update_cache: yes
+
+- name: install nodejs
+  apt:
+    name: nodejs
+    state: present
+    update_cache: yes
+
+#- name: git clone etherpad-lite
+#  git:
+#    repo: https://github.com/ether/etherpad-lite.git
+#    dest: /opt/etherpad-lite
+#    force: yes
+#    update: yes
+#    version: "release/{{ etherpad_version }}"
+
+- name: download etherpad-lite archive
+  get_url:
+    url: "https://github.com/ether/etherpad-lite/archive/{{ etherpad_version }}.zip"
+    dest: /opt/
+
+- name: unarchive etherpad-lite archive
+  unarchive:
+    src: "/opt/etherpad-lite-{{ etherpad_version }}.zip"
+    dest: /opt/
+    owner: root
+    group: root
+    remote_src: yes
+
+- name: delete etherpad-lite archive
+  file:
+    path: "/opt/etherpad-lite-{{ etherpad_version }}.zip"
+    state: absent
+
+- name: delete /opt/etherpad-lite/
+  file:
+    path: "/opt/etherpad-lite"
+    state: absent
+
+- name: rename versioned etherpad-lite directory to unversioned etherpad-lite
+  command: "mv /opt/etherpad-lite-{{ etherpad_version }} /opt/etherpad-lite"
+  notify:
+    - restart nginx
+    - restart etherpad
+
+- name: install etherpad-lite
+  command: /opt/etherpad-lite/bin/installDeps.sh
+
+- name: install plugins
+  npm:
+    name: "{{ item }}"
+    path: /opt/etherpad-lite
+    state: latest
+  loop:
+    - ep_adminpads2
+    - ep_comments_page
+    - ep_headings2
+    - ep_markdown
+    - ep_table_of_contents
+
+- include_tasks: postgres.yml
+
+- name: configure etherpad
+  template:
+    src: settings.json
+    dest: /opt/etherpad-lite/settings.json
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - restart nginx
+    - restart etherpad
+
+- name: configure pad path
+  lineinfile:
+    dest: /opt/etherpad-lite/src/static/js/index.js
+    line: "      window.location = '' + encodeURIComponent(padname.trim());"
+    regexp: "^      window.location = 'p/' + encodeURIComponent(padname.trim());"
+  notify:
+    - restart nginx
+    - restart etherpad
+
+- name: configure pad path
+  lineinfile:
+    dest: /opt/etherpad-lite/src/static/js/index.js
+    line: "      window.location = '' + randomPadName();"
+    regexp: "^      window.location = 'p/' + randomPadName();"
+  notify:
+    - restart nginx
+    - restart etherpad
+
+- name: copy favicon to /opt/etherpad-lite/src/static/
+  copy:
+    src: favicon.ico
+    dest: /opt/etherpad-lite/src/static/favicon.ico
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - restart nginx
+    - restart etherpad
+
+- name: copy skin to /opt/etherpad-lite/src/static/skins/
+  copy:
+    src: skins/medienhaus/
+    dest: /opt/etherpad-lite/src/static/skins/medienhaus
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - restart nginx
+    - restart etherpad
+
+- name: install etherpad.service
+  copy:
+    src: etherpad.service
+    dest: /etc/systemd/system/
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - restart nginx
+    - restart etherpad
+

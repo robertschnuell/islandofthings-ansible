@@ -1,0 +1,4 @@
+---
+depends:
+  - python3-psycopg2
+  - unzip
